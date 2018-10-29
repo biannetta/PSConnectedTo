@@ -17,34 +17,19 @@ app.post('/', (req, res) => {
   }
 
   const controller = connectedTo(spreadsheetID);
-  switch(req.body.text) {
-    case "HELP":
-      return res.json(controller.DisplayInstructions());
-      break;
-    case "":
-      return res.json(controller.DisplayInstructions());
-      break;
-    case "WHOIS":
-      return res.json(controller.DisplayConnections());
-      break;
-    case "DISCONNECT":
-      return res.json('Not implemented');
-      // message = ClearConnection(username);
-      break;
-    case "CLEAR":
-      return res.json('Not implemented');
-      // message = ClearConnection(username);
-      break;
-    default:
-      if (req.body.text.length == 2) {
-        return res.json('Not implemented');
-        // message = ConnectUser(username, args[0] + "/" + args[1]);
-      } else {
-        return res.json('Not implemented');
-        // message = ConnectUser(username, args[0]);
-      }
-      break;
-  }  
+  controller(req.body).then((value) => {
+    console.log(value);
+    res.json({
+      response_type: 'ephemeral',
+      text: value.text,
+      attachments: [{
+        text: value.body,
+        color: value.color
+      }]
+    });
+  });
+
+  return;
 });
 
 app.listen(port, () => {
