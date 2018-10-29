@@ -1,28 +1,13 @@
 const Express = require('express');
 const bodyParser = require('body-parser');
+const connectedTo = require('./connectedto');
+
 const {SLACK_TOKEN: token, PORT: port} = process.env;
-
-/**
-* Display Help Message for Connected command
-* @return: String
-*/
-const DisplayInstructions = () => {
-  var message = "A Command to manage and update Connection Spreadsheet";
- 
-  // Display all available commands
-  message += "\n• `/connect <Connection Name>` Marks you as connected to `<Connection Name>`";
-  message += "\n• `/connect whois` Display a list of all currently connected users";
-  message += "\n• `/connect disconnect` Disconnects you from your current connection and notifies anyone waiting";
-  message += "\n• `/connect clear` Clear all current connections and waiting";
- 
-  return {
-    color: 'good',
-    text: message
-  };
-}
-
+const spreadsheetID = '177RJ69AnNhluzkbZCrzfgIN2-Qjt2yGRQvn7ipweun0';
 const app = new Express();
+
 app.use(bodyParser.urlencoded({extended: true}));
+
 app.post('/', (req, res) => {
   if (req.body.token != token) {
     return res.json({
@@ -31,16 +16,16 @@ app.post('/', (req, res) => {
     });
   }
 
+  const controller = connectedTo(spreadsheetID);
   switch(req.body.text) {
     case "HELP":
-      return res.json(DisplayInstructions());
+      return res.json(controller.DisplayInstructions());
       break;
     case "":
-      return res.json(DisplayInstructions());
+      return res.json(controller.DisplayInstructions());
       break;
     case "WHOIS":
-      return res.json('Not implemented');
-      // message = DisplayConnections();
+      return res.json(controller.DisplayConnections());
       break;
     case "DISCONNECT":
       return res.json('Not implemented');
