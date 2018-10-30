@@ -117,11 +117,8 @@ const DisplayConnections = (spreadsheetID, auth) => new Promise((resolve, reject
  * @param: Username
  * @return
  */
-function ClearConnection (username) {
-  var data;
-  var connection;
-  
-  data = getUserConnectionData(username);
+const ClearConnection = (spreadsheetID, auth, username) => new Promise((resolve, reject) => {
+
   if (data.length > 0) {
     connection = data[0][_CONNECTION_];
     if (connection == "") {
@@ -140,8 +137,39 @@ function ClearConnection (username) {
   } else {
     return "You are not connected to anyone";
   }
-}
+});
 
+/**
+ * Check the spreadsheet for the current connection
+ * @param {String} spreadsheetID 
+ * @param {Object} auth 
+ * @param {String} username 
+ * @param {String} connection 
+ */
+const CheckConnections = (spreadsheetID, auth, username, connection) => new Promise((resolve, reject) => {
+  const sheets = google.sheets({version: 'v4', auth});
+
+  sheets.spreadsheets.values.get({
+    spreadsheetId: spreadsheetID,
+    range: 'Sheet1!A1:D'
+  }, (err, results) => {
+    if (err) reject({ message: 'Could not access Google API', error: err});
+
+    const rows = results.data.values;
+    if (rows.length > 0) {
+      let user = '';
+      let rowID = -1;
+      rows.map((row, index) => {
+        if (row[_CONNECTION_] != undefined && row[_CONNECTION_] === connection) {
+          user = row[_USERNAME_];
+          rowID = Number(index);
+        }
+      });
+      resolve({ value: user, rowId: rowID});
+    }
+    resolve({ value: '', rowId: -1});
+  });
+});
 /**
  * Connect User to Connection
  * @param: Username, Connection
@@ -207,6 +235,9 @@ const connectedToFactory = (spreadsheetID) => (body) => new Promise((resolve, re
       if (args.length == 2) connection = args[0] + "/" + args[1];
       
       auth.authenticate().then((auth) => {
+        CheckConnections(spreadsheetID, auth, user_name, connection).then((user) =>{
+
+        })
         ConnectUser(spreadsheetID, auth, user_name, connection).then((message) => {
           console.log(message);
           resolve(message);
@@ -215,5 +246,13 @@ const connectedToFactory = (spreadsheetID) => (body) => new Promise((resolve, re
       break;
   }
 });
+
+auth.authenticate().then((auth) => {
+  CheckConnections('177RJ69AnNhluzkbZCrzfgIN2-Qjt2yGRQvn7ipweun0',auth,'biannetta','test').then((user) => {
+    console.log(user);
+  }).catch((err) => {
+    console.log(err.message);
+  })
+})
 
 module.exports = connectedToFactory;
