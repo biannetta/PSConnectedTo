@@ -18,7 +18,6 @@ app.post('/', (req, res) => {
 
   const controller = connectedTo(spreadsheetID);
   controller(req.body).then((value) => {
-    console.log(value);
     res.json({
       response_type: 'ephemeral',
       text: value.text,

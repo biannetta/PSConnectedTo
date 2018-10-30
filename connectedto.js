@@ -46,27 +46,22 @@ function getUserConnectionData (username) {
  * @param: connection
  * @return: username
  */
-function whoIsConnectedTo (connection) {
-  var connections = sheet.getRangeByName("connections").getValues();
-  var data;
-  
-  for(i in connections) {
-    if (connections[i][0].toUpperCase() == connection.toUpperCase()) {
-      data = sheet.getSheetValues(Number(i), 1, 1, 4);
-      break;
+function _whoIsConnectedTo (data, connection) {
+  if (data.length == 0) return '';
+
+  let user = '';
+  data.map((row) => {
+    if (row[_CONNECTION_] != undefined && row[_CONNECTION_] === connection) {
+      user = row[_USERNAME_];
     }
-  }
-  
-  if (data.length > 0) {
-    return data[0][_USERNAME_];
-  } else {
-    return "";
-  }  
+  });
+
+  return user;
 }
 
 /**
  * Display Help Message for Connected command
- * @return: String
+ * @return: Promise
  */
 const DisplayInstructions = () => new Promise ((resolve, reject) => {
   var message = '';
@@ -86,8 +81,9 @@ const DisplayInstructions = () => new Promise ((resolve, reject) => {
 
 /**
  * Display List of Users Connected in Sheet
- * @param
- * @return
+ * @param SpreadsheetID
+ * @param GoogleAuth
+ * @return Promise
  */
 const DisplayConnections = (spreadsheetID, auth) => new Promise((resolve, reject) => {
   const sheets = google.sheets({version: 'v4', auth});
@@ -97,10 +93,10 @@ const DisplayConnections = (spreadsheetID, auth) => new Promise((resolve, reject
     spreadsheetId: spreadsheetID,
     range: 'Sheet1!A1:D'
   }, (err, results) => {
-    if (err) resolve({ color: 'danger', text: `ERROR: Couldn't reach Google API`});
+    if (err) resolve({ text: 'Currently Connected Users', color: 'danger', body: `ERROR: Couldn't reach Google API`});
     
     const rows = results.data.values;
-    if (rows.length == 0) resolve({ color: 'good', text: '*No one is currently connected*'});
+    if (rows.length == 0) resolve({ text: 'Currently Connected Users', color: 'good', body: '*No one is currently connected*'});
 
     rows.map((row) => {
       if (row[_CONNECTION_] != undefined && row[_CONNECTION_] != '') {
@@ -110,6 +106,8 @@ const DisplayConnections = (spreadsheetID, auth) => new Promise((resolve, reject
         }
       }
     });
+
+    message = (message == '') ? '*No one is currently connected*' : message;  
     resolve({ text: 'Currently Connected Users', color: 'good', body: message});
   });
 });
@@ -149,31 +147,35 @@ function ClearConnection (username) {
  * @param: Username, Connection
  * @return
  */
-function ConnectUser (username, connection) {
-  var data;
-  
-  data = getUserConnectionData(username);
-  if (data.length > 0) {
-    user = whoIsConnectedTo(connection);
-    if (user == "") {
-      // no one connected, update sheet
-      
-    } else {
-      if (data[0][_USERNAME_].toString() == username) {
-        return "You are already connected to " + connection;
+const ConnectUser = (spreadsheetID, auth, username, connection) => new Promise((resolve, reject) => {
+  const sheets = google.sheets({version: 'v4', auth});
+
+  sheets.spreadsheets.values.get({
+    spreadsheetId: spreadsheetID,
+    range: 'Sheet1!A1:D'
+  }, (err, results) => {
+    if (err) resolve({ color: 'danger', body: `ERROR: Couldn't reach Google API`});
+
+    const rows = results.data.values;
+    if (rows.length > 0) {
+      let user = _whoIsConnectedTo(rows, connection);
+      if (user === '') {
+        // no one connected, update sheet
       } else {
-        return user + " is currently connected to " + connection;
+        if (user === username) {
+          resolve({ color: 'good', body: `You are already connected to ${connection}`});
+        } else {
+          resolve({ color: 'good', body: `${user} is currently connected to ${connection}`});
+        }
       }
     }
-  } else {
     // add username to connected sheet (probably new slack user)
-  }
-  
-  return "Now Connected to " + connection;
-}
+    resolve({ color: 'good', body: `Now Connected to ${connection}`});
+  });
+});
 
 const connectedToFactory = (spreadsheetID) => (body) => new Promise((resolve, reject) => {
-  const {user_name, command, text, response_url} = body;
+  const {user_name, text, response_url} = body;
   const args = text.split(/[^A-Za-z]/);
 
   switch(args[0].toLowerCase()) {
@@ -201,11 +203,15 @@ const connectedToFactory = (spreadsheetID) => (body) => new Promise((resolve, re
       // message = ClearConnection(username);
       break;
     default:
-      if (text.length == 2) {
-        // message = ConnectUser(username, args[0] + "/" + args[1]);
-      } else {
-        // message = ConnectUser(username, args[0]);
-      }
+      let connection = args[0];
+      if (args.length == 2) connection = args[0] + "/" + args[1];
+      
+      auth.authenticate().then((auth) => {
+        ConnectUser(spreadsheetID, auth, user_name, connection).then((message) => {
+          console.log(message);
+          resolve(message);
+        });
+      });
       break;
   }
 });
