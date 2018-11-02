@@ -3,3 +3,4 @@ package-lock.json
 settings.json
 credentials.json
 token.json
+.env
