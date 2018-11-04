@@ -4,12 +4,13 @@
  */
 const {google} = require('googleapis');
 const auth = require('./authenticate');
+const axios = require('axios');
 
 // Data Column Constants
 const _USERNAME_ = 0;
 const _CONNECTION_ = 1;
-const _WAITING_ = 2;
-const _CONNECTION_TIME_ = 3;
+const _CONNECTION_TIME_ = 2;
+const _WAITING_ = 3;
 
 /**
  * format a more complex message for slack
@@ -31,20 +32,40 @@ function _complexMessage(message) {
  */
 function _simpleMessage(data) {
   return {
-    'text': data
+    text: data
   }
 }
 
-function _errorMessage(data) {
+function _errorMessage(error) {
   return {
     text: 'PSConnectedTo ERROR',
     attachments:[{
-      text: data.message,
+      text: error,
       mrkdwn_in: ["text","pretext"],
       color: 'danger'
     }]   
   }
 }
+
+/**
+ * Notify a user in slack direct channel
+ * @param {String} username 
+ * @param {String} message 
+ */
+const NotifyUser = (username, message) => new Promise((resolve, reject) => {
+  axios.post('https://hooks.slack.com/services/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',{
+    channel: '@biannetta',
+    attachments:[{
+      text: message,
+      mrkdwn_in: ["text","pretext"],
+      color: 'good'
+    }]
+  })
+  .then((res) => console.log(res))
+  .catch((err) => console.log(err));  
+
+  resolve('');
+});
 
 /**
  * Display Help Message for Connected command
@@ -71,48 +92,108 @@ const DisplayConnections = (spreadsheetID, auth) => new Promise((resolve, reject
 
   sheets.spreadsheets.values.get({
     spreadsheetId: spreadsheetID,
-    range: 'Sheet1!A1:D'
+    range: 'Sheet2!A1:D'
   }, (err, results) => {
-    if (err) reject({ text: 'Currently Connected Users', body: `ERROR: Couldn't reach Google API`, error: err});
+    if (err) reject({ success: false, value: err.message});
     
     const rows = results.data.values;
-    if (rows.length == 0) resolve(data);
-
-    rows.map((row) => {
-      if (row[_CONNECTION_] != undefined && row[_CONNECTION_] != '') {
-        data.push(row);
-      }
-    });
-
-    resolve(data);
+    if (!rows || rows.length == 0) {
+      resolve(data);
+    } else {
+      rows.map((row) => {
+        if (row[_CONNECTION_] != undefined && row[_CONNECTION_] != '') {
+          data.push(row);
+        }
+      });
+      resolve({success: true, value: data});
+    }
   });
 });
 
 /**
- * Clear User Connection Data and Notify any users waiting in queue
- * @param: Username
- * @return
+ * Get the Row of Data for the passed in Username
+ * @param {String} spreadsheetID 
+ * @param {Object} auth 
+ * @param {String} username 
  */
-const ClearConnection = (spreadsheetID, auth, username) => new Promise((resolve, reject) => {
+const GetConnectionInfo = (spreadsheetID, auth, username) => new Promise((resolve, reject) => {
+  const sheets = google.sheets({version: 'v4', auth});
+  
+  sheets.spreadsheets.values.get({
+    spreadsheetId: spreadsheetID,
+    range: 'Sheet2!A1:D'
+  }, (err, results) => {
+    if (err) reject({ success: false, value: err.message});
 
-  if (data.length > 0) {
-    connection = data[0][_CONNECTION_];
-    if (connection == "") {
-      return "You are not connected to anyone";
-    } else {
-      // clear sheet values
-      
-      if (data[0][_WAITING_] != "") {
-        //send message to data[0][_WAITING_]
-        sendMessageToChannel(data[0][_USERNAME_] + " is now disconnected from " + connection, '@' + data[0][_WAITING_]);
-      }
-      return "Now disconnected from " + connection;
+    const rows = results.data.values;
+    let res = {
+      index: 0,
+      data: []
+    };
+
+    if (rows && rows.length > 0) {
+      rows.map((row, index) => {
+        if (row[_USERNAME_].toLowerCase() === username.toLowerCase()) {
+          res.data = row;
+          res.index = index + 1;
+        }
+      });
     }
-  } else {
-    return "You are not connected to anyone";
-  }
+    resolve({ success: true, value: res});
+  });
+
 });
 
+/**
+ * Clear User Connection Data and Notify any users waiting in queue
+ * @param {String} spreadsheetID 
+ * @param {Object} auth 
+ * @param {Obejct} row 
+ */
+const ClearConnection = (spreadsheetID, auth, row) => new Promise((resolve, reject) => {
+  const sheets = google.sheets({version: 'v4', auth});
+  const range = `Sheet2!B${row.index}:D${row.index}`;
+
+  sheets.spreadsheets.values.update({
+    spreadsheetId: spreadsheetID,
+    valueInputOption: 'USER_ENTERED',
+    range: range,
+    resource: {
+      values: [
+        ['','','']
+      ]
+    }
+  }, (err, results) => {
+    if (err) reject({ success: false, value: err.message});
+    
+    resolve({success: true, value: []});
+  });
+});
+
+/**
+ * Update spreadsheet with array of values at given index
+ * @param {String} spreadsheetID 
+ * @param {Object} auth 
+ * @param {Number} index 
+ * @param {Array} values 
+ */
+const UpdateConnection = (spreadsheetID, auth, index, values) => new Promise((resolve, reject) => {
+  const sheets = google.sheets({version: 'v4', auth});
+  const range = `Sheet2!B${index}:D${index}`;
+
+  sheets.spreadsheets.values.update({
+    spreadsheetId: spreadsheetID,
+    valueInputOption: 'USER_ENTERED',
+    range: range,
+    resource: {
+      values: [values]
+    }
+  }, (err, results) => {
+    if (err) reject({ success: false, value: err.message});
+    
+    resolve({success: true, value: values});
+  });
+});
 /**
  * Check the spreadsheet for the current connection
  * @param {String} spreadsheetID 
@@ -124,21 +205,21 @@ const CheckConnections = (spreadsheetID, auth, connection) => new Promise((resol
 
   sheets.spreadsheets.values.get({
     spreadsheetId: spreadsheetID,
-    range: 'Sheet1!A1:D'
+    range: 'Sheet2!A1:D'
   }, (err, results) => {
-    if (err) reject({ message: 'Could not access Google API', error: err});
+    if (err) reject({ success: false, value: err.message});
 
     let data = [];
     const rows = results.data.values;
 
-    if (rows.length > 0) {
+    if (rows && rows.length > 0) {
       rows.map((row, index) => {
         if (row[_CONNECTION_] != undefined && row[_CONNECTION_].toLowerCase() === connection.toLowerCase()) {
           data = row;
         }
       });
     }
-    resolve(data);
+    resolve({ success: true, value: data});
   });
 });
 
@@ -151,78 +232,118 @@ const CheckConnections = (spreadsheetID, auth, connection) => new Promise((resol
  */
 const ConnectUser = (spreadsheetID, auth, username, connection) => new Promise((resolve, reject) => {
   const sheets = google.sheets({version: 'v4', auth});
+  const data = [username, connection.toLocaleLowerCase(), Date.now()];
 
   sheets.spreadsheets.values.append({
     spreadsheetId: spreadsheetID,
-    range: 'Sheet1',
+    range: 'Sheet2',
     valueInputOption: 'USER_ENTERED',
-    resource: {
-      values: [
-        [username, connection]
-      ]
-    }
+    resource: { values: [data] }
   }, (err, results) => {
-    if (err) reject({ message: `Could not reach Google API`, error: err.message});
+    if (err) return reject({ success: false, value: err.message});
 
-    resolve(`Now Connected to ${connection}`);
+    resolve({ success: true, value: data});
   });
 });
 
+/**
+ * 
+ * @param {String} spreadsheetID 
+ */
 const connectedToFactory = (spreadsheetID) => (body) => new Promise((resolve, reject) => {
-  const {user_name, text} = body;
+  const {user_id, user_name, text} = body;
   const args = text.split(/[^A-Za-z]/);
 
   auth.authenticate().then((auth) => {
     switch(args[0].toLowerCase()) {
       case "help":
-        resolve(DisplayInstructions());
-        break;
       case "":
         resolve(DisplayInstructions());
         break;
       case "whois":
-        DisplayConnections(spreadsheetID, auth).then((connections) => {
+        DisplayConnections(spreadsheetID, auth).then((response) => {
           let message = '';
-          if (connections.length > 0) {
+          let connections = response.value;
+
+          if (connections && connections.length > 0) {
             connections.map((connection) => {
-              message += `${connection[_USERNAME_]} is connected to *${connection[_CONNECTION_]}*`
+              message += `\n${connection[_USERNAME_]} is connected to *${connection[_CONNECTION_]}*`
             });
           } else {
             message = 'No one is currently connected to anyone';
           }
           resolve(_complexMessage({header: 'Who is currently connected', color: 'good', value: message}));
+        }).catch((err) => {
+          resolve(_errorMessage(err.value));
         });
         break;
       case "disconnect":
-        // message = ClearConnection(username);
-        break;
       case "clear":
-        // message = ClearConnection(username);
+        GetConnectionInfo(spreadsheetID, auth, user_name).then((result) => {
+          let connection = result.value;
+          if (connection.index > -1) {
+            ClearConnection(spreadsheetID, auth, connection).then((status) => {
+              if (status.success) {
+                let message = `Now disconnected from *${connection.data[_CONNECTION_]}*`;
+                resolve(_simpleMessage(message));
+              }
+            })
+            .catch((error) => resolve(_errorMessage(error.value)));
+            // Notify anyone waiting for connection
+            if (connection.data[_WAITING_] !== '' && connection.data[_WAITING_] !== undefined) {
+              console.log(`${connection.data[_WAITING_]} can connect to ${connection.data[_CONNECTION_]}`);
+            }
+          } else {
+            resolve(_simpleMessage(`You are not currently connected to anyone`));
+          }
+        }).catch((error) => resolve(_errorMessage(error.value)));
         break;
       default:
         let connection = (args.length == 2) ? args[0] + "/" + args[1] : args[0];
         
-        CheckConnections(spreadsheetID, auth, connection).then((data) => {
+        CheckConnections(spreadsheetID, auth, connection).then((result) => {
+          let data = result.value;
           if (data.length == 0) {
-            // no one connect, freely connect user
-            ConnectUser(spreadsheetID,auth,user_name,connection).then((message) => {
-              resolve(_simpleMessage(message));
-            }).catch((error) => {
-              console.log(error.error);
-              resolve(_errorMessage(error));
+            GetConnectionInfo(spreadsheetID, auth, user_name).then((result) => {
+              let row = result.value;
+              if (row.index == 0) {
+                // No user row found
+                ConnectUser(spreadsheetID, auth, user_name, connection).then((data) => {
+                  let message = `You are now connected to ${data.value[_CONNECTION_]}`;
+                  resolve(_simpleMessage(message));
+                }).catch((error) => resolve(_errorMessage(error.value)));
+              } else {
+                UpdateConnection(spreadsheetID, auth, row.index, [connection, Date.now(),'']).then((result) => {
+                  resolve(_simpleMessage(`You are now connected to ${connection}`));
+                }).catch((error) => resolve(_errorMessage(error.value)));
+              }
             })
+            .catch((error) => {
+              resolve(_errorMessage(error.value));
+            });
           } else {
             // someone is currently connected
-            resolve(_simpleMessage(`${data[_USERNAME_]} is already connected to *${connection}*`));
+            var message = '';
+            if (user_name == data[_USERNAME_]) {
+              message = `You are already connected to *${connection}*`;
+            } else {
+              message = `${data[_USERNAME_]} is currenlty connected to *${connection}*`;
+            }
+            
+            if (data[_WAITING_] && data[_WAITING_] != '') {
+              message += ` and ${data[_WAITING_]} is waiting`;
+              resolve(_simpleMessage(message));
+            } else {
+              resolve(_simpleMessage(message));
+            }
           }
         }).catch((error) => {
-          console.log(error.error);
-          resolve(_errorMessage(error));
+          resolve(_errorMessage(error.value));
         });
         break;
     }
   })
-  .catch((err) => console.log(error.error));
+  .catch((err) => resolve(_errorMessage(err)));
 });
 
 module.exports = connectedToFactory;
