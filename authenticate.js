@@ -68,8 +68,7 @@ class Authentication {
   }
 
   storeToken(token) {
-    fs.writeFile(TOKEN_PATH, JSON.stringify(token));
-    console.log('Token stored to ' + TOKEN_PATH);
+    fs.writeFile(TOKEN_PATH, JSON.stringify(token), {}, (err) => (err) ? console.log(err) : console.log(`Token stored to ${TOKEN_PATH}`));
   }
 }
 
