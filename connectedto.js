@@ -48,26 +48,6 @@ function _errorMessage(error) {
 }
 
 /**
- * Notify a user in slack direct channel
- * @param {String} username 
- * @param {String} message 
- */
-const NotifyUser = (username, message) => new Promise((resolve, reject) => {
-  axios.post('https://hooks.slack.com/services/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',{
-    channel: '@biannetta',
-    attachments:[{
-      text: message,
-      mrkdwn_in: ["text","pretext"],
-      color: 'good'
-    }]
-  })
-  .then((res) => console.log(res))
-  .catch((err) => console.log(err));  
-
-  resolve('');
-});
-
-/**
  * Display Help Message for Connected command
  */
 const DisplayInstructions = () => {
@@ -251,7 +231,7 @@ const ConnectUser = (spreadsheetID, auth, username, connection) => new Promise((
  * @param {String} spreadsheetID 
  */
 const connectedToFactory = (spreadsheetID) => (body) => new Promise((resolve, reject) => {
-  const {user_id, user_name, text} = body;
+  const {user_id, text} = body;
   const args = text.split(/[^A-Za-z]/);
 
   auth.authenticate().then((auth) => {
@@ -267,7 +247,7 @@ const connectedToFactory = (spreadsheetID) => (body) => new Promise((resolve, re
 
           if (connections && connections.length > 0) {
             connections.map((connection) => {
-              message += `\n${connection[_USERNAME_]} is connected to *${connection[_CONNECTION_]}*`
+              message += `\n<@${connection[_USERNAME_]}> is connected to *${connection[_CONNECTION_]}*`
             });
           } else {
             message = 'No one is currently connected to anyone';
@@ -279,7 +259,7 @@ const connectedToFactory = (spreadsheetID) => (body) => new Promise((resolve, re
         break;
       case "disconnect":
       case "clear":
-        GetConnectionInfo(spreadsheetID, auth, user_name).then((result) => {
+        GetConnectionInfo(spreadsheetID, auth, user_id).then((result) => {
           let connection = result.value;
           if (connection.index > -1) {
             ClearConnection(spreadsheetID, auth, connection).then((status) => {
@@ -304,12 +284,12 @@ const connectedToFactory = (spreadsheetID) => (body) => new Promise((resolve, re
         CheckConnections(spreadsheetID, auth, connection).then((result) => {
           let data = result.value;
           if (data.length == 0) {
-            GetConnectionInfo(spreadsheetID, auth, user_name).then((result) => {
+            GetConnectionInfo(spreadsheetID, auth, user_id).then((result) => {
               let row = result.value;
               if (row.index == 0) {
                 // No user row found
-                ConnectUser(spreadsheetID, auth, user_name, connection).then((data) => {
-                  let message = `You are now connected to ${data.value[_CONNECTION_]}`;
+                ConnectUser(spreadsheetID, auth, user_id, connection).then((data) => {
+                  let message = `You are now connected to *${data.value[_CONNECTION_]}*`;
                   resolve(_simpleMessage(message));
                 }).catch((error) => resolve(_errorMessage(error.value)));
               } else {
@@ -324,10 +304,10 @@ const connectedToFactory = (spreadsheetID) => (body) => new Promise((resolve, re
           } else {
             // someone is currently connected
             var message = '';
-            if (user_name == data[_USERNAME_]) {
+            if (user_id == data[_USERNAME_]) {
               message = `You are already connected to *${connection}*`;
             } else {
-              message = `${data[_USERNAME_]} is currenlty connected to *${connection}*`;
+              message = `<@${data[_USERNAME_]}> is currenlty connected to *${connection}*`;
             }
             
             if (data[_WAITING_] && data[_WAITING_] != '') {
